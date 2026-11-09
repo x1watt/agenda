@@ -88,75 +88,86 @@ void main() {
   });
 
   group('SyncRoots', () {
-    test('agenda includes projects and the two root files only', () {
+    test('agenda includes projects, credentials, prompts, shared state and the root files', () {
       expect(SyncRoots.includes('agenda', 'projects/car/AB2-CD3-x/task.json'), isTrue);
       expect(SyncRoots.includes('agenda', 'events.json'), isTrue);
       expect(SyncRoots.includes('agenda', 'recurring.json'), isTrue);
-      expect(SyncRoots.includes('agenda', 'accounts/secret.md'), isFalse);
+      expect(SyncRoots.includes('agenda', 'accounts/protonmail-bridge.pass'), isTrue);
+      expect(SyncRoots.includes('agenda', 'prompts/review.md'), isTrue);
+      expect(SyncRoots.includes('agenda', 'shared/checker-lock.json'), isTrue);
       expect(SyncRoots.includes('agenda', 'runs/1.json'), isFalse);
-      expect(SyncRoots.includes('agenda', 'projects/../accounts/x'), isFalse);
+      expect(SyncRoots.includes('agenda', 'core/lib/x.dart'), isFalse);
+      expect(SyncRoots.includes('agenda', 'projects/../runs/x'), isFalse);
       expect(SyncRoots.includes('agenda', 'projects/t/task.json.tmp-12'), isFalse);
       expect(SyncRoots.includes('personal', 'documents/a.pdf'), isTrue);
+      expect(SyncRoots.isPrivate('agenda', 'accounts/x.pass'), isTrue);
+      expect(SyncRoots.isPrivate('agenda', 'projects/a/task.json'), isFalse);
     });
   });
 
-  group('client and server', () {
+  group('sessions over the request protocol', () {
     late Directory tmp;
-    late String desk, phone, state;
-    late SyncServer server;
-    late SyncClient client;
 
-    setUp(() async {
+    /// A device: its two roots and its host.
+    ({Map<String, String> roots, SyncHost host}) device(String name) {
+      final roots = {'agenda': '${tmp.path}/$name/agenda', 'personal': '${tmp.path}/$name/personal'};
+      for (final d in roots.values) {
+        Directory(d).createSync(recursive: true);
+      }
+      return (roots: roots, host: SyncHost(roots: roots, chunkBytes: 1000));
+    }
+
+    /// [from] syncs with [to] as if over the network: requests and replies go through JSON.
+    SyncSession session(String from, String to, {int chunk = 1000}) {
+      final a = device(from), b = device(to);
+      return SyncSession(
+        transport: RequestTransport((req) async {
+          final reply = await b.host.handle((jsonDecode(jsonEncode(req)) as Map).cast<String, Object?>());
+          return (jsonDecode(jsonEncode(reply)) as Map).cast<String, Object?>();
+        }, chunkBytes: chunk),
+        roots: a.roots,
+        stateDir: '${tmp.path}/$from/state/$to',
+        deviceName: from,
+        peerName: to,
+      );
+    }
+
+    late String desk, phone;
+    late SyncSession client;
+
+    setUp(() {
       tmp = Directory.systemTemp.createTempSync('agenda_sync');
       desk = '${tmp.path}/desk';
       phone = '${tmp.path}/phone';
-      state = '${tmp.path}/state';
       Directory('$desk/agenda/projects/car/AB2-CD3-kg').createSync(recursive: true);
       Directory('$desk/agenda/accounts').createSync(recursive: true);
+      Directory('$desk/agenda/runs').createSync(recursive: true);
       Directory('$desk/personal').createSync(recursive: true);
       File('$desk/agenda/projects/car/AB2-CD3-kg/task.json').writeAsStringSync(encodeJson(_task(items: [
         {'id': '1', 'text': 'a', 'done': false},
       ])));
-      File('$desk/agenda/accounts/secret.pass').writeAsStringSync('nope');
+      File('$desk/agenda/accounts/secret.pass').writeAsStringSync('mail password');
+      File('$desk/agenda/runs/1.json').writeAsStringSync('{}');
       File('$desk/personal/me.md').writeAsStringSync('# Me');
-      final (cert, key) = await ensureCertificate('${tmp.path}/cert');
-      server = SyncServer(
-        roots: {'agenda': '$desk/agenda', 'personal': '$desk/personal'},
-        name: 'desk',
-        certPath: cert,
-        keyPath: key,
-        devicesFile: '${tmp.path}/devices.json',
-        port: 0,
-        discoveryPort: 0,
-        apiKey: () async => 'sk-test',
-      );
-      await server.start();
-      final code = server.startPairing();
-      final (peer, apiKey) = await pairWithDesktop('127.0.0.1', server.boundPort, code, 'phone');
-      expect(apiKey, 'sk-test');
-      client = SyncClient(peer: peer, roots: {'agenda': '$phone/agenda', 'personal': '$phone/personal'}, stateDir: state, deviceName: 'phone');
+      client = session('phone', 'desk');
     });
 
-    tearDown(() async {
-      await server.stop();
-      tmp.deleteSync(recursive: true);
-    });
+    tearDown(() => tmp.deleteSync(recursive: true));
 
-    test('wrong code is refused', () async {
-      server.startPairing();
-      await expectLater(pairWithDesktop('127.0.0.1', server.boundPort, '000000', 'x'), throwsA(isA<SyncException>()));
-    });
-
-    test('first sync pulls everything except credentials', () async {
+    test('first sync pulls every synced file, credentials at mode 600, but no run logs', () async {
       final r = await client.sync();
       expect(r.errors, isEmpty);
       expect(File('$phone/agenda/projects/car/AB2-CD3-kg/task.json').existsSync(), isTrue);
       expect(File('$phone/personal/me.md').readAsStringSync(), '# Me');
-      expect(File('$phone/agenda/accounts/secret.pass').existsSync(), isFalse);
+      expect(File('$phone/agenda/accounts/secret.pass').readAsStringSync(), 'mail password');
+      if (Platform.isLinux) {
+        expect(File('$phone/agenda/accounts/secret.pass').statSync().modeString(), 'rw-------');
+      }
+      expect(File('$phone/agenda/runs/1.json').existsSync(), isFalse);
       expect((await client.sync()).changes, 0);
     });
 
-    test('a photo taken on the phone lands on the desktop; deletes propagate', () async {
+    test('a photo taken on the phone lands on the desktop in chunks; deletes propagate', () async {
       await client.sync();
       final photo = File('$phone/agenda/projects/car/AB2-CD3-kg/photos/2026-09-25_1400.jpg')..createSync(recursive: true);
       photo.writeAsBytesSync(List.generate(5000, (i) => i % 251));
@@ -166,6 +177,13 @@ void main() {
       File('$desk/agenda/projects/car/AB2-CD3-kg/photos/2026-09-25_1400.jpg').deleteSync();
       expect((await client.sync()).deletedHere, 1);
       expect(photo.existsSync(), isFalse);
+    });
+
+    test('a large file pulled in chunks arrives intact', () async {
+      final big = List.generate(12345, (i) => (i * 7) % 256);
+      File('$desk/personal/scan.pdf').writeAsBytesSync(big);
+      expect((await client.sync()).errors, isEmpty);
+      expect(File('$phone/personal/scan.pdf').readAsBytesSync(), big);
     });
 
     test('task.json changed on both sides is merged', () async {
@@ -212,10 +230,47 @@ void main() {
       expect(Directory('$desk/personal').listSync().where((e) => e.path.contains('me.conflict-')), hasLength(1));
     });
 
-    test('unpaired token is refused', () async {
-      await server.revoke(client.peer.token);
-      final r = await client.sync();
-      expect(r.errors.single, contains('no longer paired'));
+    test('three devices converge pair by pair', () async {
+      final laptop = session('laptop', 'desk');
+      final phoneLaptop = session('phone', 'laptop');
+      await client.sync();
+      await laptop.sync();
+      File('$phone/personal/from-phone.md').writeAsStringSync('p');
+      File('${tmp.path}/laptop/personal/from-laptop.md').writeAsStringSync('l');
+      await phoneLaptop.sync(); // phone <-> laptop
+      await client.sync(); // phone <-> desk
+      for (final d in ['desk', 'phone', 'laptop']) {
+        expect(File('${tmp.path}/$d/personal/from-phone.md').existsSync(), isTrue, reason: d);
+        expect(File('${tmp.path}/$d/personal/from-laptop.md').existsSync(), isTrue, reason: d);
+      }
+      expect((await laptop.sync()).changes, 0);
+    });
+
+    test('the host refuses paths outside the synced files', () async {
+      final host = SyncHost(roots: {'agenda': '$desk/agenda'});
+      expect((await host.handle({'op': 'get', 'root': 'agenda', 'path': 'runs/1.json'}))['error'], 'path not synced');
+      expect((await host.handle({'op': 'get', 'root': 'agenda', 'path': 'projects/../runs/1.json'}))['error'], 'path not synced');
+      expect((await host.handle({'op': 'manifest', 'root': 'etc'}))['error'], 'unknown root');
+    });
+
+    test('a write based on an old version is refused', () async {
+      final host = SyncHost(roots: {'personal': '$desk/personal'});
+      final t = RequestTransport((r) => host.handle(r));
+      expect(await t.put('personal', 'me.md', [1], 'not-the-hash', 0), isFalse);
+      expect(await t.put('personal', 'me.md', [1], null, 0), isFalse); // it exists
+      expect(File('$desk/personal/me.md').readAsStringSync(), '# Me');
+      expect(await t.delete('personal', 'me.md', 'not-the-hash'), isFalse);
+    });
+
+    test('an unreachable peer is reported, not thrown', () async {
+      final s = SyncSession(
+        transport: RequestTransport((_) async => throw SyncException('desk not reachable')),
+        roots: device('phone').roots,
+        stateDir: '${tmp.path}/x',
+        deviceName: 'phone',
+        peerName: 'desk',
+      );
+      expect((await s.sync()).errors.single, 'desk not reachable');
     });
   });
 }

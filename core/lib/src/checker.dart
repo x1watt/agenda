@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'claude_process.dart';
 import 'mail.dart';
@@ -8,7 +9,10 @@ import 'settings.dart';
 import 'model.dart';
 import 'store.dart';
 
-/// Checker memory between ticks (~/.local/state/agenda/state.json).
+/// Checker memory between ticks. The part every device shares (the last full run,
+/// mail already reported, deadlines already announced) lives in the agenda's
+/// `shared/checker-state.json` and syncs; the boot id and the last check of this
+/// device stay in ~/.local/state/agenda/state.json.
 class CheckState {
   CheckState({
     this.bootId,
@@ -39,30 +43,106 @@ class CheckState {
         },
       );
 
-  Map<String, Object?> toJson() {
+  Map<String, Object?> toJson() => {..._localJson(), ..._sharedJson()};
+
+  Map<String, Object?> _localJson() => {
+        'boot_id': bootId,
+        'last_check': lastCheck?.toIso8601String(),
+      };
+
+  Map<String, Object?> _sharedJson() {
     final seenList = seen.toList();
     return {
-      'boot_id': bootId,
-      'last_check': lastCheck?.toIso8601String(),
       'last_full_run': lastFullRun?.toIso8601String(),
       'seen': seenList.length > 2000 ? seenList.sublist(seenList.length - 2000) : seenList,
       'notified_deadlines': notifiedDeadlines.toList(),
     };
   }
 
-  static Future<CheckState> load() async {
-    final f = File(AgendaPaths.stateFile);
-    if (!await f.exists()) return CheckState();
+  static Future<Map<String, Object?>?> _read(String path) async {
+    final f = File(path);
+    if (!await f.exists()) return null;
     try {
       final j = jsonDecode(await f.readAsString());
-      return j is Map<String, Object?> ? CheckState.fromJson(j) : CheckState();
+      return j is Map<String, Object?> ? j : null;
     } on FormatException {
-      return CheckState();
+      return null;
     }
   }
 
-  Future<void> save() =>
-      writeAtomic(AgendaPaths.stateFile, const JsonEncoder.withIndent('  ').convert(toJson()));
+  /// Loads this device's part and, from [sharedFile], the account's part. Before the
+  /// shared file exists, the old single file provides both.
+  static Future<CheckState> load({String? sharedFile, String? localFile}) async {
+    final local = await _read(localFile ?? AgendaPaths.stateFile) ?? const {};
+    final shared = sharedFile == null ? null : await _read(sharedFile);
+    return CheckState.fromJson({...local, if (shared != null) ...{
+      'last_full_run': shared['last_full_run'],
+      'seen': shared['seen'],
+      'notified_deadlines': shared['notified_deadlines'],
+    }});
+  }
+
+  Future<void> save({String? sharedFile, String? localFile}) async {
+    if (sharedFile == null) {
+      await writeAtomic(localFile ?? AgendaPaths.stateFile, const JsonEncoder.withIndent('  ').convert(toJson()));
+      return;
+    }
+    await writeAtomic(localFile ?? AgendaPaths.stateFile, const JsonEncoder.withIndent('  ').convert(_localJson()));
+    await writeAtomic(sharedFile, encodeJson({'version': 1, ..._sharedJson()}));
+  }
+}
+
+/// Id of this installation: random, made once, kept in ~/.config/agenda/device-id.
+Future<String> localDeviceId({String? file}) async {
+  final f = File(file ?? AgendaPaths.deviceIdFile);
+  if (await f.exists()) {
+    final s = (await f.readAsString()).trim();
+    if (s.length >= 8) return s;
+  }
+  final r = Random.secure();
+  final id = [for (var i = 0; i < 8; i++) r.nextInt(256).toRadixString(16).padLeft(2, '0')].join();
+  await writeAtomic(f.path, '$id\n');
+  return id;
+}
+
+/// Who runs the background checks: one device of the account at a time. The
+/// holder renews its lease every tick; another device takes over only once the
+/// lease ran out (the holder is off or stopped checking). The file syncs, so two
+/// devices that took a free lease at the same moment converge on one holder at
+/// the next sync (the newer write wins) and the other steps back.
+class CheckerLock {
+  CheckerLock({required this.device, required this.name, required this.until});
+
+  final String device;
+  final String name;
+  final DateTime until;
+
+  factory CheckerLock.fromJson(Map<String, Object?> j) => CheckerLock(
+        device: '${j['device'] ?? ''}',
+        name: '${j['name'] ?? ''}',
+        until: DateTime.tryParse('${j['until'] ?? ''}') ?? DateTime(0),
+      );
+
+  Map<String, Object?> toJson() => {'version': 1, 'device': device, 'name': name, 'until': until.toIso8601String()};
+
+  /// Takes or renews the lease in [path] for [device]. Returns null when this device
+  /// now holds it, or the lock of the other device that does.
+  static Future<CheckerLock?> take(String path, {required String device, required String name, required Duration lease, required DateTime now}) async {
+    final f = File(path);
+    if (await f.exists()) {
+      try {
+        final j = jsonDecode(await f.readAsString());
+        if (j is Map<String, Object?>) {
+          final held = CheckerLock.fromJson(j);
+          if (held.device != device && held.until.isAfter(now)) return held;
+        }
+      } on FormatException {
+        // A broken lock is a free lock.
+      }
+    }
+    await writeAtomic(path, encodeJson(CheckerLock(device: device, name: name, until: now.add(lease)).toJson()));
+    return null;
+  }
 }
 
 String deadlineKey(Deadline d) => '${d.date}|${d.project}|${d.task}|${d.text}';
@@ -238,7 +318,19 @@ Future<int> runCheck({bool force = false, bool dryRun = false, void Function(Str
     }
 
     final now = DateTime.now();
-    final state = await CheckState.load();
+
+    // One device of the account runs the checks; "Run now" runs here regardless.
+    if (!runNow) {
+      final lease = Duration(minutes: 2 * settings.intervalMinutes + 5);
+      final held = await CheckerLock.take(paths.checkerLockFile,
+          device: await localDeviceId(), name: settings.deviceName ?? Platform.localHostname, lease: lease, now: now);
+      if (held != null) {
+        say('checks run on ${held.name} (lease until ${held.until.toIso8601String().substring(0, 16)}); skipping');
+        return 0;
+      }
+    }
+
+    final state = await CheckState.load(sharedFile: paths.checkerStateFile);
     final bootId = await readBootId();
 
     Agenda? agenda;
@@ -293,7 +385,7 @@ Future<int> runCheck({bool force = false, bool dryRun = false, void Function(Str
       say('nothing to do');
       if (!dryRun) {
         state.lastCheck = now;
-        await state.save();
+        await state.save(sharedFile: paths.checkerStateFile);
       }
       return 0;
     }
@@ -304,7 +396,7 @@ Future<int> runCheck({bool force = false, bool dryRun = false, void Function(Str
       // Leave mail unseen and the flag in place so the next tick picks them up.
       say('chat in progress; deferring the full run');
       state.lastCheck = now;
-      await state.save();
+      await state.save(sharedFile: paths.checkerStateFile);
       return 0;
     }
 
@@ -343,7 +435,7 @@ Future<int> runCheck({bool force = false, bool dryRun = false, void Function(Str
       ..lastFullRun = now
       ..seen.addAll(newKeys)
       ..notifiedDeadlines.addAll(deadlines.map(deadlineKey));
-    await state.save();
+    await state.save(sharedFile: paths.checkerStateFile);
 
     if (settings.notifications) {
       var needsUser = 0;

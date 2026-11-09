@@ -22,6 +22,12 @@ dependencies:
   receive_sharing_intent: ^1.9.0
   sherpa_onnx: ^1.13.8
   record: ^7.1.1
+  crypto: ^3.0.7
+  # Reticulum transport, LXMF and NOSTR keys (the same stack as senhorio).
+  reticulum:
+    git:
+      url: https://github.com/xprs-dev/reticulum-dart.git
+      ref: 2ad703014bfdf017d6a36f842e79149bdec7f901
 
 dev_dependencies:
   flutter_test:

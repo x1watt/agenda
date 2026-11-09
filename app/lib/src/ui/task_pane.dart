@@ -73,7 +73,7 @@ class _TaskPaneState extends State<TaskPane> {
     final picked = await ImagePicker().pickImage(source: source, maxWidth: 2400, maxHeight: 2400, imageQuality: 85);
     if (picked == null) return;
     final rel = await app.addFileToTask(t, picked.path);
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Saved $rel. It goes to the desktop with the next sync.')));
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Saved $rel. It reaches your other devices with the next sync.')));
   }
 
   Future<void> _followUp() async {

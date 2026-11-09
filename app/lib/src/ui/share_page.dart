@@ -58,7 +58,7 @@ class _SharePageState extends State<SharePage> {
                     final added = await app.addSharesToTask(t);
                     if (!context.mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('$added file${added == 1 ? '' : 's'} added to "${t.name}". They go to the desktop with the next sync.')),
+                      SnackBar(content: Text('$added file${added == 1 ? '' : 's'} added to "${t.name}". They reach your other devices with the next sync.')),
                     );
                   },
                 ),

@@ -56,7 +56,7 @@ class _SettingsPageState extends State<SettingsPage> {
       padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
       children: [
         const Text('Settings', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
-        Caption(AppController.isMobile ? 'Sync with the desktop' : 'Phone'),
+        const Caption('Account and devices'),
         SyncSettings(app: app),
         if (!AppController.isMobile) ...[
           const Caption('Start and background'),

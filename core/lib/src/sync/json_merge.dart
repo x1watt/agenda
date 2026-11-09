@@ -25,6 +25,8 @@ String? Function(Object?)? _identity(String key) => switch (key) {
   'files' => (v) => v is Map ? '${v['path']}' : null,
   'watch' => (v) => v is Map ? '${v['from']}' : null,
   'deadlines' => (v) => v is Map ? '${v['date']}|${v['text']}|${v['task']}' : null,
+  // Sets of strings kept by the checker (shared/checker-state.json): union.
+  'seen' || 'notified_deadlines' => (v) => '$v',
   // Append-only logs: an entry is its whole content.
   'history' || 'conversation' => (v) => jsonEncode(v),
   _ => null,

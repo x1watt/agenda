@@ -14,5 +14,5 @@ export 'src/settings.dart';
 export 'src/store.dart';
 export 'src/sync/json_merge.dart';
 export 'src/sync/manifest.dart';
-export 'src/sync/sync_client.dart';
-export 'src/sync/sync_server.dart';
+export 'src/sync/sync_protocol.dart';
+export 'src/sync/sync_session.dart';

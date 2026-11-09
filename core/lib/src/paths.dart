@@ -19,6 +19,9 @@ class AgendaPaths {
   static String get settingsFile => '$configDir/settings.json';
   static String get stateDir => '$home/.local/state/agenda';
   static String get stateFile => '$stateDir/state.json';
+
+  /// Random id of this installation (the checker lock names its holder by it).
+  static String get deviceIdFile => '$configDir/device-id';
   static String get cacheDir => '$home/.cache/agenda';
   static String get checkLock => '$cacheDir/check.lock';
   static String get chatLock => '$cacheDir/chat.lock';
@@ -47,8 +50,13 @@ class AgendaPaths {
   /// The Anthropic API key used by the phone app (handed over when pairing).
   String get apiKeyFile => '$accountsDir/anthropic-api.pass';
 
-  /// Desktop sync server: certificate, key and paired devices.
+  /// Sync state per peer device (bases of the last syncs, log).
   static String get syncDir => '$configDir/sync';
+
+  /// Files every device of the account shares: checker state and lock, shared settings.
+  String get sharedDir => '$agendaDir/shared';
+  String get checkerStateFile => '$sharedDir/checker-state.json';
+  String get checkerLockFile => '$sharedDir/checker-lock.json';
 
   /// Where Claude Code keeps the transcripts of sessions started in [agendaDir].
   String get claudeProjectDir => claudeProjectDirFor(agendaDir);
@@ -69,6 +77,19 @@ Future<void> writeAtomic(String path, String contents) async {
   await file.parent.create(recursive: true);
   final tmp = File('$path.tmp-$pid');
   await tmp.writeAsString(contents, flush: true);
+  await tmp.rename(path);
+}
+
+/// Writes [bytes] to [path] atomically and sets its modification time. [private]
+/// files (credentials, personal data) get mode 600 before they appear under [path].
+Future<void> writeBytesAtomic(String path, List<int> bytes, {DateTime? mtime, bool private = false}) async {
+  final f = File(path);
+  await f.parent.create(recursive: true);
+  final tmp = File('$path.tmp-$pid-${DateTime.now().microsecondsSinceEpoch}');
+  await tmp.writeAsBytes(bytes, flush: true);
+  if (mtime != null) await tmp.setLastModified(mtime);
+  // Android keeps app files private already and has no chmod to call.
+  if (private && (Platform.isLinux || Platform.isMacOS)) await Process.run('chmod', ['600', tmp.path]);
   await tmp.rename(path);
 }
 

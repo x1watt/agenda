@@ -7,14 +7,14 @@ the phone: what is the next step, and by when?
 Every ongoing matter is a folder of plain JSON and Markdown on disk, so Claude can read and update
 the state directly, and so can you with any editor. There is no server and no database.
 
-This is a personal project, built for one setup (Linux desktop plus an Android phone on the same
-Wi-Fi). It is published because the design may be useful to others, not as a product: there is no
+This is a personal project, built for one setup (Linux laptops plus an Android phone sharing one
+account). It is published because the design may be useful to others, not as a product: there is no
 support and no stability promise.
 
 ## What is in here
 
 - `core/`: the Dart package shared by everything else. Data model and store, the background
-  checker, the Claude Code process wrapper, the read-only Proton Mail Bridge reader, LAN sync.
+  checker, the Claude Code process wrapper, the read-only Proton Mail Bridge reader, the file-sync protocol.
 - `app/`: the Flutter app. Linux desktop (calendar, task list, task pane with a chat per task,
   tray icon, run history, settings) and Android phone (package `x1watt.agenda`).
 - `docs/format.md`: the data format, field by field.
@@ -39,10 +39,12 @@ they never send mail, post anything or contact anyone.
 Every task, every project and the cross-project topic has exactly one continuous chat, stored in
 the node's own JSON file, with the node's current state passed to Claude as extra system prompt.
 
-The desktop serves the content folder to the paired phone over HTTPS on the local network, with
-UDP discovery and a pairing code. The phone drives each sync; JSON files changed on both sides are
-merged item by item, other conflicts are kept twice. Credentials, run records and code never leave
-the desktop.
+Every device of the account (one NOSTR key, copied from device to device in Settings) syncs the
+content folder, the credentials and ~/personal with the others over Reticulum: on the LAN and
+through public hubs, end-to-end encrypted, accepting only devices that prove they hold the same
+key. JSON files changed on two devices are merged item by item, other conflicts are kept twice.
+Any laptop can run the background checks; a synced lease makes sure only one does at a time. Run
+records, chat transcripts and code stay on the device that made them.
 
 ## Requirements
 
@@ -82,8 +84,9 @@ dart run core/bin/protonmail.dart recent 20
 
 ## Configuration
 
-Settings live in `~/.config/agenda/settings.json` (content folder, check interval, daily review
-hour, model, notifications, sync) and are editable in the app.
+Settings live in `~/.config/agenda/settings.json` (content folder, check interval, notifications,
+sync, hubs) and are editable in the app. The model, the daily review hour and the run timeout are
+shared by every device of the account, in the content folder's `shared/settings.json`.
 
 Mail is read through the local Proton Mail Bridge and needs three files in the content folder's
 `accounts/`, all mode 600 and none of them in this repository:

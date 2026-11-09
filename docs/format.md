@@ -251,21 +251,29 @@ Outside the agenda folder, mode 700: Markdown files per topic (`me.md`, `family.
 `documents/` with copies of reusable documents. Every fact row names its source and date. Rules
 in `~/personal/README.md`. The app and the checker pass it to Claude with `--add-dir`.
 
-## Phone sync
+## Sync between devices
 
-The phone keeps its own copy in app-private storage and syncs with the desktop over the LAN
-(`core/lib/src/sync/`). Synced: `projects/**`, `general.json`, `events.json`, `CLAUDE.md`,
-`docs/format.md` and all of `~/personal`. Never synced: `accounts/`, `runs/`, `legacy/`, `prompts/`,
-`app/`, `core/`, `build/`, `*.tmp-*`, `*.lock`.
+One account (an nsec, kept in `accounts/agenda.nsec`) can be installed on several laptops and
+phones. Each device keeps its own copy and syncs with the others of the same account over
+Reticulum, on the LAN and through public hubs (`core/lib/src/sync/`, `app/lib/src/sync/`).
+Synced: `projects/**`, `accounts/**`, `prompts/**`, `shared/**`, `general.json`, `events.json`,
+`recurring.json`, `CLAUDE.md`, `docs/format.md` and all of `~/personal`. Never synced: `runs/`,
+`legacy/`, `app/`, `core/`, `build/`, `*.tmp-*`, `*.lock`. Files in `accounts/` and `~/personal`
+are written with mode 600.
 
+- `shared/` holds what every device needs for the automation: `settings.json` (model, daily review
+  hour, run timeout), `checker-state.json` (last full run, mail already reported, deadlines
+  already announced) and `checker-lock.json` (the device that runs the background checks and
+  until when; the holder renews it every tick, another device takes over once it expired).
 - Task photos from the phone: `<task folder>/photos/YYYY-MM-DD_HHMMSS.jpg`, with a history entry.
-- A JSON file changed on both devices is merged three-way: `items`, `threads`, `events` by `id`,
-  `files` by `path`, `watch` by `from`, `deadlines` by date+text, `history` and `conversation` as
-  append-only logs (union, in date order); a scalar changed differently on both keeps the newer one.
+- A JSON file changed on two devices is merged three-way: `items`, `threads`, `events` by `id`,
+  `files` by `path`, `watch` by `from`, `deadlines` by date+text, `seen` and `notified_deadlines`
+  as sets, `history` and `conversation` as append-only logs (union, in date order); a scalar
+  changed differently on both keeps the newer one.
 - Any other file changed on both: the newer keeps its name, the other is saved beside it as
   `<name>.conflict-<device>-<YYYYMMDD-HHMM>.<ext>`. Check for such files and merge them by hand.
-- Phone chat transcripts stay on the phone; their messages reach the node's `conversation[]` like
-  desktop chats.
+- Chat transcripts stay on the device that ran the chat; their messages reach the node's
+  `conversation[]` like any other chat.
 
 ## Paths
 

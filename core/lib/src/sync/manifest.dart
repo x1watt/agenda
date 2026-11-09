@@ -22,11 +22,22 @@ class FileEntry {
 }
 
 /// The two roots that are synced and which files inside them belong to the sync.
-/// Credentials (`accounts/`), run logs and code never leave the desktop.
+/// Every device of the account gets what the automation needs: the projects, the
+/// credentials (`accounts/`), the prompts and the shared checker state (`shared/`).
+/// Run logs, code and build trees stay on the device that made them.
 class SyncRoots {
   static const agenda = 'agenda';
   static const personal = 'personal';
   static const all = [agenda, personal];
+
+  /// Folders of the agenda root synced with everything inside them.
+  static const dirs = {'projects', 'accounts', 'prompts', 'shared'};
+
+  /// Single files of the agenda root that are synced.
+  static const files = {'general.json', 'events.json', 'recurring.json', 'CLAUDE.md', 'docs/format.md'};
+
+  /// Files written with mode 600: credentials and everything personal.
+  static bool isPrivate(String root, String rel) => root == personal || rel.startsWith('accounts/');
 
   /// True when [rel] (a `/`-separated path inside [root]) is synced.
   static bool includes(String root, String rel) {
@@ -37,7 +48,7 @@ class SyncRoots {
     if (parts.any((p) => p == '.sync' || p == 'build' || p == '.git')) return false;
     if (root == agenda) {
       // CLAUDE.md and the format reference go along so Claude on the phone knows the rules.
-      return parts.first == 'projects' && parts.length > 1 || const {'general.json', 'events.json', 'recurring.json', 'CLAUDE.md', 'docs/format.md'}.contains(rel);
+      return dirs.contains(parts.first) && parts.length > 1 || files.contains(rel);
     }
     return root == personal;
   }
@@ -77,8 +88,9 @@ Future<Map<String, FileEntry>> scanRoot(String root, String dir, {HashCache? cac
   // The desktop agenda folder also holds code and build trees: walk only what is synced.
   final candidates = root == SyncRoots.agenda
       ? [
-          if (Directory('$dir/projects').existsSync()) ...Directory('$dir/projects').listSync(recursive: true, followLinks: false),
-          for (final f in const ['general.json', 'events.json', 'recurring.json', 'CLAUDE.md', 'docs/format.md'])
+          for (final d in SyncRoots.dirs)
+            if (Directory('$dir/$d').existsSync()) ...Directory('$dir/$d').listSync(recursive: true, followLinks: false),
+          for (final f in SyncRoots.files)
             if (File('$dir/$f').existsSync()) File('$dir/$f'),
         ]
       : base.listSync(recursive: true, followLinks: false);

@@ -267,13 +267,14 @@ class _SystemMenu extends StatelessWidget {
   Widget build(BuildContext context) {
     final lastRun = app.runs.firstOrNull;
     final sync = app.sync;
-    final phoneOk = sync.lastSuccess != null && DateTime.now().difference(sync.lastSuccess!) < const Duration(minutes: 3);
+    final last = sync.lastAnySuccess;
+    final phoneOk = last != null && DateTime.now().difference(last) < const Duration(minutes: 10);
     final healthy = AppController.isMobile ? phoneOk : app.bridgeUp && app.timerOn && (lastRun == null || lastRun.ended == null || lastRun.ok);
     final status = AppController.isMobile
-        ? (sync.peer == null ? 'Not paired with the desktop' : (sync.status ?? 'Not synced yet'))
+        ? sync.status
         : [
             app.bridgeUp ? 'Mail connected' : 'Mail Bridge off',
-            sync.server != null ? 'Phone sync on (${sync.server!.devices.length} paired)' : 'Phone sync off',
+            sync.status,
             app.timerOn ? (app.nextCheck == null ? 'Checking...' : 'Next check ${fmtTime(app.nextCheck!)}') : 'Background checks off',
             if (lastRun != null) 'Last run ${ago(lastRun.started)}${lastRun.ended == null ? ' (running)' : (lastRun.ok ? '' : ' (failed)')}',
           ].join('\n');

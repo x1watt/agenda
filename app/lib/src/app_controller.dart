@@ -43,7 +43,7 @@ class AppController extends ChangeNotifier {
   /// The central personal-information folder shown on the Personal info page.
   late String personalDir = settings.personalDir;
 
-  /// LAN sync: server on the desktop, client on the phone.
+  /// Sync with the other devices of the account, over Reticulum (LAN and hubs).
   late final sync = SyncService(settings: settings, onFilesChanged: () => _later('agenda', _loadAgenda));
 
   /// The phone build: no Claude Code, no systemd, no tray.
@@ -90,17 +90,16 @@ class AppController extends ChangeNotifier {
         sync.syncSoon();
       }
     });
-    if (isMobile) {
-      await Directory(personalDir).create(recursive: true);
-      _watch(personalDir, (_) => sync.syncSoon(), recursive: true);
-      await Directory(paths.projectsDir).create(recursive: true);
-      _watch(paths.projectsDir, _onProjectsEvent, recursive: true);
-      await sync.startClient();
-      return;
+    // Every synced folder: a local change asks the other devices to sync.
+    await Directory(personalDir).create(recursive: true);
+    _watch(personalDir, _onSyncedEvent, recursive: true);
+    for (final d in const ['accounts', 'prompts', 'shared']) {
+      await Directory('${paths.agendaDir}/$d').create(recursive: true);
+      _watch('${paths.agendaDir}/$d', _onSyncedEvent, recursive: true);
     }
-    unawaited(sync.startServer());
-    await Directory(paths.projectsDir).create(recursive: true);
     _watch(paths.projectsDir, _onProjectsEvent, recursive: true);
+    unawaited(sync.start());
+    if (isMobile) return;
     await Directory(paths.runsDir).create(recursive: true);
     _watch(paths.runsDir, (_) => _later('runs', _loadRuns));
     await Directory(paths.claudeProjectDir).create(recursive: true);
@@ -110,6 +109,18 @@ class AppController extends ChangeNotifier {
       refreshSystem();
       _later('agenda', _loadAgenda);
     });
+  }
+
+  void _onSyncedEvent(FileSystemEvent e) {
+    if (e.path.contains('.tmp-')) return;
+    sync.syncSoon();
+    // Model and review hour changed on another device.
+    if (e.path == settings.sharedFile) {
+      _later('settings', () async {
+        await settings.reloadShared();
+        notifyListeners();
+      });
+    }
   }
 
   void _onProjectsEvent(FileSystemEvent e) {
@@ -186,7 +197,7 @@ class AppController extends ChangeNotifier {
       }
     }
     projects.sort((a, b) => a.dir.compareTo(b.dir));
-    return Agenda(dir: fresh.dir, projects: projects, general: fresh.general, events: fresh.events, errors: fresh.errors);
+    return Agenda(dir: fresh.dir, projects: projects, general: fresh.general, events: fresh.events, recurringTopics: fresh.recurringTopics, errors: fresh.errors);
   }
 
   Future<void> _loadRuns() async {
@@ -374,7 +385,7 @@ class AppController extends ChangeNotifier {
     return '''
 You are Claude inside the agenda app on Max's Android phone. You help him move real-life tasks
 forward (letters, forms, phone numbers, rules, planning). The agenda folder and ~/personal are synced
-with his desktop over the home Wi-Fi; your file changes reach the desktop at the next sync.
+with his other devices (desktop and laptops); your file changes reach them at the next sync.
 
 Your tools: Read, Write, Edit, Glob, Grep on the agenda folder (paths relative to it, e.g.
 projects/taxes/data/TASKS.md) and on ~/personal (paths starting with ~/personal/), plus web_search and
@@ -706,7 +717,7 @@ ${await read('$personalDir/README.md')}
   }
 
   Future<void> shutdown() async {
-    await sync.stopServer();
+    await sync.stop();
     for (final c in _chats.values) {
       await c.close();
     }

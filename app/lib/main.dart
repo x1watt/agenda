@@ -42,6 +42,7 @@ Future<void> _mainAndroid() async {
   settings
     ..agendaDir = '$support/agenda'
     ..personalDir = '$support/personal';
+  await settings.reloadShared();
   final app = AppController(settings)..listMode = true;
   unawaited(app.start());
   // Photos and files shared from other apps (WhatsApp, gallery, mail): pick a task for them.
