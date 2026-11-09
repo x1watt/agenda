@@ -324,7 +324,10 @@ class RnsNode extends ChangeNotifier {
     // sourceHash is the sender's LXMF delivery destination; only verified devices of this account are known.
     final devId = _byLxmf[hexOf(m.sourceHash)];
     if (devId == null) {
-      log('message from an unknown node dropped');
+      // Its announce has not reached us yet. Asking for its path makes it announce
+      // again (see onPathRequest); the sender retries the message after that.
+      log('message from a node not yet announced: dropped, asking it to announce');
+      _transport?.requestPath(m.sourceHash);
       return;
     }
     try {

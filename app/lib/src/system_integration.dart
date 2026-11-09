@@ -10,9 +10,32 @@ class SystemIntegration {
   static const timer = 'agenda-check.timer';
   static const service = 'agenda-check.service';
 
-  static String get appBinary => '${AgendaPaths.installDir}/agenda';
+  static String get installedBinary => '${AgendaPaths.installDir}/agenda';
+
+  /// What starts at login: the installed app (tool/install-linux.sh), or this very
+  /// binary when it runs from somewhere else (a build folder).
+  static String get appBinary => File(installedBinary).existsSync() ? installedBinary : Platform.resolvedExecutable;
 
   static Future<bool> autostartEnabled() => File(AgendaPaths.autostartFile).exists();
+
+  /// The binary the autostart entry launches, or null without an entry.
+  static Future<String?> autostartTarget() async {
+    final f = File(AgendaPaths.autostartFile);
+    if (!await f.exists()) return null;
+    final m = RegExp(r'^Exec=(\S+)', multiLine: true).firstMatch(await f.readAsString());
+    return m?.group(1);
+  }
+
+  /// Makes the login entry match [on]: writes it when missing or when it points at a
+  /// binary that is gone or no longer the one to use, removes it when off.
+  static Future<void> ensureAutostart(bool on) async {
+    final target = await autostartTarget();
+    if (!on) {
+      if (target != null) await setAutostart(false);
+      return;
+    }
+    if (target == null || target != appBinary || !await File(target).exists()) await setAutostart(true);
+  }
 
   /// Writes or removes ~/.config/autostart/agenda.desktop.
   static Future<void> setAutostart(bool on) async {
@@ -21,15 +44,18 @@ class SystemIntegration {
       if (await f.exists()) await f.delete();
       return;
     }
+    final bin = appBinary;
+    final dir = File(bin).parent.path;
+    final icon = File('$dir/icon.png').existsSync() ? '$dir/icon.png' : '$dir/data/flutter_assets/assets/icon.png';
     await f.parent.create(recursive: true);
     await f.writeAsString('''
 [Desktop Entry]
 Type=Application
 Name=agenda
 Comment=Claude-powered assistant for the daily tasks
-Exec=$appBinary --start-minimized
-Path=${AgendaPaths.installDir}
-Icon=${AgendaPaths.installDir}/icon.png
+Exec=$bin --start-minimized
+Path=$dir
+Icon=$icon
 Terminal=false
 StartupNotify=false
 StartupWMClass=x1watt.agenda

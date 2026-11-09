@@ -32,6 +32,10 @@ fi
 
 # This machine hard-freezes when two heavy builds run at once: always go
 # through the machine-wide build lock.
+# Flutter is not always on PATH (e.g. ~/flutter/bin only).
+if ! command -v flutter >/dev/null && [[ -x "${HOME}/flutter/bin/flutter" ]]; then
+  export PATH="${HOME}/flutter/bin:${PATH}"
+fi
 FLUTTER_CMD=(flutter)
 if [[ -x "${HOME}/bin/android-build-locked" ]]; then
   FLUTTER_CMD=("${HOME}/bin/android-build-locked" flutter)
@@ -108,7 +112,30 @@ WantedBy=timers.target
 UNIT
 systemctl --user daemon-reload
 
-if [[ "${1:-}" != "--no-auto" ]]; then
+# The app keeps the login entry in line with "start_at_login" in its settings.
+set_start_at_login() {
+  local file="${HOME}/.config/agenda/settings.json"
+  mkdir -p "$(dirname "${file}")"
+  python3 - "${file}" "$1" <<'PY'
+import json, os, sys
+path, on = sys.argv[1], sys.argv[2] == "true"
+try:
+    with open(path) as f:
+        j = json.load(f)
+except (OSError, ValueError):
+    j = {}
+j["start_at_login"] = on
+with open(path + ".tmp", "w") as f:
+    json.dump(j, f, indent=2)
+os.replace(path + ".tmp", path)
+PY
+}
+
+if [[ "${1:-}" == "--no-auto" ]]; then
+  set_start_at_login false
+  rm -f "${AUTOSTART_FILE}"
+else
+  set_start_at_login true
   mkdir -p "$(dirname "${AUTOSTART_FILE}")"
   write_desktop "${AUTOSTART_FILE}" " --start-minimized"
   cat >> "${AUTOSTART_FILE}" <<DESKTOP
@@ -118,6 +145,8 @@ DESKTOP
   systemctl --user enable --now agenda-check.timer
   echo "Autostart enabled and background checks on."
 fi
+echo "Change it later in agenda: Settings > Start the app at login."
+
 
 command -v update-desktop-database >/dev/null && \
   update-desktop-database "${DESKTOP_DIR}" 2>/dev/null || true

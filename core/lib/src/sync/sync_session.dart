@@ -150,6 +150,7 @@ class SyncSession {
           if (!await _unchanged(path, lh)) continue;
           if (rh == null) {
             await File(path).delete();
+            await pruneEmptyParents(path, dir);
             await _dropBase(root, rel);
             base.remove(rel);
             report.deletedHere++;

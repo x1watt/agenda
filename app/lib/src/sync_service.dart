@@ -44,6 +44,12 @@ class SyncService extends ChangeNotifier {
   final reports = <String, SyncReport>{};
   final lastSuccess = <String, DateTime>{};
   final _syncing = <String>{};
+
+  /// Devices asked to sync again while a sync with them was running.
+  final _again = <String>{};
+
+  /// Retries pending after a sync that ended with errors.
+  final _retry = <String, Timer>{};
   final _pending = <String, Completer<Map<String, Object?>>>{};
   var _nextId = 0;
   Timer? _periodic;
@@ -112,6 +118,10 @@ class SyncService extends ChangeNotifier {
   Future<void> stop() async {
     _periodic?.cancel();
     _soon?.cancel();
+    for (final t in _retry.values) {
+      t.cancel();
+    }
+    _retry.clear();
     for (final c in _pending.values) {
       if (!c.isCompleted) c.completeError(SyncException('sync stopped'));
     }
@@ -194,7 +204,7 @@ class SyncService extends ChangeNotifier {
       throw SyncException('$name not reachable');
     }
     try {
-      return await c.future.timeout(const Duration(minutes: 3));
+      return await c.future.timeout(const Duration(seconds: 60));
     } on TimeoutException {
       throw SyncException('$name did not answer');
     } finally {
@@ -208,7 +218,12 @@ class SyncService extends ChangeNotifier {
   Future<void> syncWith(String peer) async {
     final n = node;
     final p = n?.peers[peer];
-    if (n == null || p == null || !_syncing.add(peer)) return;
+    if (n == null || p == null) return;
+    if (!_syncing.add(peer)) {
+      // A change arrived during this sync: run once more right after it.
+      _again.add(peer);
+      return;
+    }
     notifyListeners();
     try {
       final session = SyncSession(
@@ -220,8 +235,19 @@ class SyncService extends ChangeNotifier {
       );
       final r = await session.sync();
       reports[peer] = r;
-      if (r.errors.isEmpty) lastSuccess[peer] = r.at;
+      if (r.errors.isEmpty) {
+        lastSuccess[peer] = r.at;
+      } else {
+        // Usually a lost message or a device just discovered: try again soon.
+        _retry[peer] ??= Timer(const Duration(seconds: 20), () {
+          _retry.remove(peer);
+          unawaited(syncWith(peer));
+        });
+      }
       n.log('sync with ${p.name}: $r');
+      for (final e in r.errors.take(5)) {
+        n.log('  error: $e');
+      }
       if (r.changedHere) onFilesChanged();
     } on Object catch (e) {
       n.log('sync with ${p.name} failed: $e');
@@ -229,6 +255,7 @@ class SyncService extends ChangeNotifier {
       _syncing.remove(peer);
       notifyListeners();
     }
+    if (_again.remove(peer)) unawaited(syncWith(peer));
   }
 
   /// Syncs with every device this one drives and pokes the others.

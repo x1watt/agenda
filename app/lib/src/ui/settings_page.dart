@@ -66,7 +66,11 @@ class _SettingsPageState extends State<SettingsPage> {
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Start the app at login'),
-                  subtitle: const Text('Starts hidden in the tray; open it from the dock or the tray icon.'),
+                  subtitle: Text(
+                    'Starts hidden in the tray; open it from the dock or the tray icon.\n'
+                    'Runs ${SystemIntegration.appBinary}'
+                    '${SystemIntegration.appBinary == SystemIntegration.installedBinary ? '' : ' (not installed: run app/tool/install-linux.sh to install)'}',
+                  ),
                   value: app.autostartOn,
                   onChanged: (v) => app.setAutostart(v),
                 ),

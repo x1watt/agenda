@@ -179,6 +179,20 @@ void main() {
       expect(photo.existsSync(), isFalse);
     });
 
+    test('a task deleted on one side leaves no empty folder on either side', () async {
+      await client.sync();
+      Directory('$desk/agenda/projects/car/AB2-CD3-kg').deleteSync(recursive: true);
+      expect((await client.sync()).deletedHere, 1);
+      expect(Directory('$phone/agenda/projects/car/AB2-CD3-kg').existsSync(), isFalse);
+      expect(Directory('$phone/agenda/projects').existsSync(), isTrue, reason: 'top-level folders stay');
+      final t = File('$phone/agenda/projects/car/ZZ2-ZZ3-x/task.json')..createSync(recursive: true);
+      t.writeAsStringSync('{}');
+      await client.sync();
+      t.parent.deleteSync(recursive: true);
+      expect((await client.sync()).deletedThere, 1);
+      expect(Directory('$desk/agenda/projects/car/ZZ2-ZZ3-x').existsSync(), isFalse);
+    });
+
     test('a large file pulled in chunks arrives intact', () async {
       final big = List.generate(12345, (i) => (i * 7) % 256);
       File('$desk/personal/scan.pdf').writeAsBytesSync(big);

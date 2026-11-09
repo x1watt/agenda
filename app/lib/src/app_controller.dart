@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'agent/api_chat.dart';
 import 'agent/file_tools.dart';
 import 'chat_controller.dart';
+import 'identity/identity.dart';
 import 'secrets.dart';
 import 'sync_service.dart';
 import 'system_integration.dart';
@@ -24,7 +25,10 @@ String fileNode(AgendaTask t, TaskFile f) => 'file:${t.uid}|${f.path}';
 /// App-wide state. File-driven: projects/, general.json, runs/ and the Claude
 /// session folder are watched, so background runs and chats show up live.
 class AppController extends ChangeNotifier {
-  AppController(this.settings);
+  /// [syncKeys] replaces the OS keystore (tests run several devices in one process).
+  AppController(this.settings, {KeyStore? syncKeys}) : _syncKeys = syncKeys;
+
+  final KeyStore? _syncKeys;
 
   final AgendaSettings settings;
   AgendaPaths get paths => settings.paths;
@@ -44,7 +48,17 @@ class AppController extends ChangeNotifier {
   late String personalDir = settings.personalDir;
 
   /// Sync with the other devices of the account, over Reticulum (LAN and hubs).
-  late final sync = SyncService(settings: settings, onFilesChanged: () => _later('agenda', _loadAgenda));
+  late final sync = SyncService(
+    settings: settings,
+    keys: _syncKeys,
+    onFilesChanged: () {
+      _later('agenda', _loadAgenda);
+      _later('settings', () async {
+        await settings.reloadShared(); // model, review hour: maybe changed on another device
+        notifyListeners();
+      });
+    },
+  );
 
   /// The phone build: no Claude Code, no systemd, no tray.
   static bool get isMobile => Platform.isAndroid;
@@ -85,7 +99,8 @@ class AppController extends ChangeNotifier {
     await Directory(paths.projectsDir).create(recursive: true);
     await Future.wait([_loadAgenda(), if (!isMobile) ...[_loadRuns(), _loadSessions(), refreshSystem()]]);
     _watch(paths.agendaDir, (e) {
-      if (e.path.endsWith('/general.json') || e.path.endsWith('/events.json') || e.path.endsWith('/recurring.json')) {
+      final p = _eventPath(e);
+      if (p.endsWith('/general.json') || p.endsWith('/events.json') || p.endsWith('/recurring.json') || p.endsWith('/CLAUDE.md')) {
         _later('agenda', _loadAgenda);
         sync.syncSoon();
       }
@@ -100,6 +115,8 @@ class AppController extends ChangeNotifier {
     _watch(paths.projectsDir, _onProjectsEvent, recursive: true);
     unawaited(sync.start());
     if (isMobile) return;
+    // The "Start the app at login" setting decides; repair a missing or stale entry.
+    unawaited(SystemIntegration.ensureAutostart(settings.startAtLogin).then((_) => refreshSystem()));
     await Directory(paths.runsDir).create(recursive: true);
     _watch(paths.runsDir, (_) => _later('runs', _loadRuns));
     await Directory(paths.claudeProjectDir).create(recursive: true);
@@ -111,11 +128,16 @@ class AppController extends ChangeNotifier {
     });
   }
 
+  /// The file an event is about. Every write here is atomic (temp file, then rename),
+  /// which arrives as a move whose `path` is the temp file: use where it went.
+  static String _eventPath(FileSystemEvent e) => e is FileSystemMoveEvent ? (e.destination ?? e.path) : e.path;
+
   void _onSyncedEvent(FileSystemEvent e) {
-    if (e.path.contains('.tmp-')) return;
+    final p = _eventPath(e);
+    if (p.contains('.tmp-')) return;
     sync.syncSoon();
     // Model and review hour changed on another device.
-    if (e.path == settings.sharedFile) {
+    if (p == settings.sharedFile) {
       _later('settings', () async {
         await settings.reloadShared();
         notifyListeners();
@@ -124,7 +146,7 @@ class AppController extends ChangeNotifier {
   }
 
   void _onProjectsEvent(FileSystemEvent e) {
-    final p = e.path;
+    final p = _eventPath(e);
     if (p.contains('.tmp-')) return;
     sync.syncSoon();
     if (p.endsWith('/task.json') || p.endsWith('/project.json')) {

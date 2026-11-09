@@ -187,6 +187,7 @@ class SyncHost {
         final current = await _hashOf(file);
         if ('${req['base']}' != current) return {'error': 'changed', 'hash': current};
         if (await file.exists()) await file.delete();
+        await pruneEmptyParents(file.path, dir);
         onChanged?.call(root, rel);
         return {'ok': true};
     }
@@ -218,6 +219,22 @@ class SyncHost {
   }
 
   static Future<String> _hashOf(File f) async => await f.exists() ? hashBytes(await f.readAsBytes()) : 'none';
+}
+
+/// After [file] was deleted, removes the folders it leaves empty. A task folder must
+/// not outlive its task.json: the app would read the empty folder as a broken task.
+/// Folders directly under [rootDir] (projects/, accounts/, ...) always stay.
+Future<void> pruneEmptyParents(String file, String rootDir) async {
+  var dir = File(file).parent;
+  while (dir.path.startsWith('$rootDir/') && dir.path.substring(rootDir.length + 1).contains('/')) {
+    try {
+      if (!await dir.list().isEmpty) return;
+      await dir.delete();
+    } on FileSystemException {
+      return;
+    }
+    dir = dir.parent;
+  }
 }
 
 class _Upload {
