@@ -1,0 +1,35 @@
+name: agenda
+description: "Claude-powered assistant for the daily tasks in ~/code/2026/agenda."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  agenda_core:
+    path: ../core
+  window_manager: ^0.5.2
+  system_tray: ^2.0.3
+  flutter_markdown_plus: ^1.0.12
+  path_provider: ^2.1.5
+  flutter_secure_storage: ^11.2.0
+  image_picker: ^1.2.3
+  open_filex: ^4.7.0
+  url_launcher: ^6.3.2
+  receive_sharing_intent: ^1.9.0
+  sherpa_onnx: ^1.13.8
+  record: ^7.1.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/icon.png
+    - assets/tray/

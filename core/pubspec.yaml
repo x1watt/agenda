@@ -1,0 +1,13 @@
+name: agenda_core
+description: Shared logic for the agenda assistant (tasks, settings, Claude process, sessions, mail, checker).
+publish_to: none
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  crypto: ^3.0.7
+  enough_mail: ^2.1.7
+
+dev_dependencies:
+  test: ^1.25.0

@@ -1,0 +1,31 @@
+# The agenda content itself stays private: this repository holds only the code.
+/CLAUDE.md
+/accounts/
+/projects/
+/legacy/
+/runs/
+/events.json
+/general.json
+/recurring.json
+/.claude/
+
+# Dart and Flutter build output
+.dart_tool/
+.packages
+build/
+app/linux/flutter/ephemeral/
+app/voice_models/
+app/voice_demo_build/
+
+# Android build and local configuration
+.gradle/
+.kotlin/
+app/android/local.properties
+app/android/key.properties
+*.jks
+*.keystore
+
+# Editor and IDE files
+*.iml
+.idea/
+*.swp
