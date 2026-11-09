@@ -7,7 +7,11 @@
 /events.json
 /general.json
 /recurring.json
+/shared/
 /.claude/
+
+# Copies the sync keeps when the same file changed on two devices
+*.conflict-*
 
 # Dart and Flutter build output
 .dart_tool/
