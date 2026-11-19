@@ -29,7 +29,8 @@ jobs:
           cache: true
       - name: Version
         shell: bash
-        run: echo "VERSION=$(sed -n 's/^version: *\([^+]*\).*/\1/p' app/pubspec.yaml)" >> "$GITHUB_ENV"
+        run: |
+          echo "VERSION=$(sed -n 's/^version: *\([^+]*\).*/\1/p' app/pubspec.yaml)" >> "$GITHUB_ENV"
       - name: Build the app
         working-directory: app
         run: flutter build windows --release
@@ -75,7 +76,8 @@ jobs:
           channel: stable
           cache: true
       - name: Version
-        run: echo "VERSION=$(sed -n 's/^version: *\([^+]*\).*/\1/p' app/pubspec.yaml)" >> "$GITHUB_ENV"
+        run: |
+          echo "VERSION=$(sed -n 's/^version: *\([^+]*\).*/\1/p' app/pubspec.yaml)" >> "$GITHUB_ENV"
       - name: Build the app
         working-directory: app
         run: flutter build linux --release
