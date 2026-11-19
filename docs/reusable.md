@@ -83,7 +83,8 @@ Keep this list current when adding features.
   `convert x.png -define icon:auto-resize=32,16 x.ico`); add both when adding one.
 
 ### Builds — `.github/workflows/build.yml`
-- Windows zip and Linux tar.gz on every push; attached to a release when one is published.
+- Windows zip, Linux tar.gz and the signed arm64 APK on every push; attached to a release when one
+  is published. The APK key comes from the `ANDROID_KEYSTORE_*` / `ANDROID_KEY_*` repository secrets.
   The command line tools are compiled next to the app in both. Add new `core/bin` tools there.
 
 ### Controller pattern — `app/lib/src/app_controller.dart`

@@ -42,13 +42,15 @@ android {
                 storePassword = keyProps.getProperty("storePassword")
                 keyAlias = keyProps.getProperty("keyAlias")
                 keyPassword = keyProps.getProperty("keyPassword")
+                keyProps.getProperty("storeType")?.let { storeType = it }
             }
         }
     }
 
     buildTypes {
         release {
-            // Release key in ~/.android/agenda-release.jks (password in agenda/accounts/android-signing.pass).
+            // Signed with the key named in android/key.properties (local builds) or in the
+            // ANDROID_KEYSTORE_* / ANDROID_KEY_* repository secrets (GitHub Actions).
             signingConfig = if (keyProps.getProperty("storeFile") != null) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
         }
     }
