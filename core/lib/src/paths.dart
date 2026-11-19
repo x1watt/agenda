@@ -11,7 +11,7 @@ class AgendaPaths {
   static String? homeOverride;
 
   static String get home =>
-      homeOverride ?? Platform.environment['HOME'] ?? Directory.current.path;
+      homeOverride ?? Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'] ?? Directory.current.path;
 
   static String get defaultAgendaDir => '$home/code/2026/agenda';
 
@@ -66,7 +66,7 @@ class AgendaPaths {
 
   /// Resolves `claude`: the user-local install first, then PATH. Checked once.
   static final String claudeBinary = () {
-    final local = '$home/.local/bin/claude';
+    final local = '$home/.local/bin/claude${Platform.isWindows ? '.exe' : ''}';
     return File(local).existsSync() ? local : 'claude';
   }();
 }
@@ -93,8 +93,15 @@ Future<void> writeBytesAtomic(String path, List<int> bytes, {DateTime? mtime, bo
   await tmp.rename(path);
 }
 
-/// Collapses `.`, `..` and empty segments of an absolute path.
-String normalizePath(String path) {
+/// Collapses `.`, `..` and empty segments of an absolute path. On Windows the
+/// result keeps its drive (`C:/Users/me`) and uses forward slashes.
+String normalizePath(String path, {bool? windows}) {
+  var drive = '';
+  if (windows ?? Platform.isWindows) {
+    path = path.replaceAll('\\', '/');
+    drive = RegExp(r'^[A-Za-z]:').stringMatch(path) ?? '';
+    path = path.substring(drive.length);
+  }
   final out = <String>[];
   for (final part in path.split('/')) {
     if (part.isEmpty || part == '.') continue;
@@ -104,7 +111,7 @@ String normalizePath(String path) {
       out.add(part);
     }
   }
-  return '/${out.join('/')}';
+  return '$drive/${out.join('/')}';
 }
 
 /// Relative path from [from] (a directory) to [to].

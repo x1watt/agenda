@@ -1,0 +1,105 @@
+# Builds the desktop app for Windows and Linux. Every push and pull request
+# leaves the two archives as workflow artifacts; publishing a release attaches
+# them to it (agenda-<version>-windows-x64.zip, agenda-<version>-linux-x64.tar.gz).
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  FLUTTER_VERSION: 3.47.9
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Version
+        shell: bash
+        run: echo "VERSION=$(sed -n 's/^version: *\([^+]*\).*/\1/p' app/pubspec.yaml)" >> "$GITHUB_ENV"
+      - name: Build the app
+        working-directory: app
+        run: flutter build windows --release
+      - name: Compile the command line tools
+        working-directory: core
+        shell: bash
+        run: |
+          dart pub get
+          out=../app/build/windows/x64/runner/Release
+          dart compile exe bin/agenda_check.dart -o "$out/agenda_check.exe"
+          dart compile exe bin/protonmail.dart -o "$out/agenda-mail.exe"
+          dart compile exe bin/agenda_new.dart -o "$out/agenda-new.exe"
+      - name: Package
+        shell: pwsh
+        run: |
+          $dir = "agenda-$env:VERSION-windows-x64"
+          Copy-Item -Recurse app/build/windows/x64/runner/Release $dir
+          Compress-Archive -Path $dir -DestinationPath "$dir.zip"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: agenda-windows-x64
+          path: agenda-*-windows-x64.zip
+          if-no-files-found: error
+      - name: Attach to the release
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" agenda-*-windows-x64.zip --clobber
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev \
+            libayatana-appindicator3-dev libsecret-1-dev libjsoncpp-dev
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Version
+        run: echo "VERSION=$(sed -n 's/^version: *\([^+]*\).*/\1/p' app/pubspec.yaml)" >> "$GITHUB_ENV"
+      - name: Build the app
+        working-directory: app
+        run: flutter build linux --release
+      - name: Compile the command line tools
+        working-directory: core
+        run: |
+          dart pub get
+          out=../app/build/linux/x64/release/bundle
+          dart compile exe bin/agenda_check.dart -o "$out/agenda_check"
+          dart compile exe bin/protonmail.dart -o "$out/agenda-mail"
+          dart compile exe bin/agenda_new.dart -o "$out/agenda-new"
+          cp ../app/assets/icon.png "$out/icon.png"
+      - name: Package
+        run: |
+          dir="agenda-$VERSION-linux-x64"
+          cp -a app/build/linux/x64/release/bundle "$dir"
+          tar czf "$dir.tar.gz" "$dir"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: agenda-linux-x64
+          path: agenda-*-linux-x64.tar.gz
+          if-no-files-found: error
+      - name: Attach to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" agenda-*-linux-x64.tar.gz --clobber

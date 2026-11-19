@@ -60,5 +60,7 @@ void main() {
     expect(normalizePath('/a/b/../c/./d'), '/a/c/d');
     expect(relativeTo('/a/b/agenda', '/a/b/car/post/x.md'), '../car/post/x.md');
     expect(relativeTo('/a/b/agenda', '/a/b/agenda/x.md'), 'x.md');
+    expect(normalizePath(r'C:\Users\me\agenda\..\x', windows: true), 'C:/Users/me/x');
+    expect(normalizePath('C:/Users/me/./agenda', windows: true), 'C:/Users/me/agenda');
   });
 }

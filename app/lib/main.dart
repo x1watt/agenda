@@ -137,13 +137,14 @@ class _AgendaAppState extends State<AgendaApp> with WindowListener {
   // ---- tray ---------------------------------------------------------------
 
   Future<void> _initTray() async {
-    // appindicator needs real files on disk, not bundled-asset URIs.
+    // appindicator needs real files on disk, not bundled-asset URIs. Windows wants .ico.
+    final ext = Platform.isWindows ? 'ico' : 'png';
     try {
       final dir = Directory('${(await getApplicationSupportDirectory()).path}/tray');
       await dir.create(recursive: true);
       for (final name in ['tray.png', for (var i = 1; i <= 9; i++) 'tray_$i.png', 'tray_9plus.png']) {
-        final data = await rootBundle.load('assets/tray/$name');
-        final f = File('${dir.path}/$name');
+        final data = await rootBundle.load('assets/tray/${name.replaceFirst('.png', '.$ext')}');
+        final f = File('${dir.path}/${name.replaceFirst('.png', '.$ext')}');
         await f.writeAsBytes(data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes));
         _trayIcons[name] = f.path;
       }
@@ -200,6 +201,8 @@ class _AgendaAppState extends State<AgendaApp> with WindowListener {
   @override
   void onWindowClose() async {
     if (_quitting) return;
+    // Without a tray icon a hidden window could never be brought back.
+    if (Platform.isWindows && !_trayReady) return _quit();
     // Closing hides to the tray; background checks run regardless (systemd).
     await windowManager.hide();
   }
