@@ -19,7 +19,9 @@ Keep this list current when adding features.
 
 ### Paths and writes — `core/lib/src/paths.dart`
 - `writeAtomic(path, contents)` (text), `writeBytesAtomic(path, bytes)` in `sync/sync_server.dart` (binary).
-- `normalizePath`, `relativeTo(from, to)`.
+- `normalizePath`, `relativeTo(from, to)`. On Windows `normalizePath` keeps the drive and returns
+  forward slashes (`C:/Users/me`); run any path that gets compared or split through it.
+- `AgendaPaths.home` — HOME, or USERPROFILE on Windows. Never read the environment directly.
 
 ### Ids — `core/lib/src/ids.dart`
 - `generateUid(taken)`, `takenUids(projectsDir)`, `slugFor(name)`, `taskFolderName(uid, name)`.
@@ -72,6 +74,18 @@ Keep this list current when adding features.
 ### Dialogs — `app/lib/src/ui/dialogs.dart`
 - `textDialog`, `confirmDialog`, `pickDate`, `pickSchedule`, `taskDialog`, `projectDialog`,
   `eventDialog`, `topicDialog`, `recurringItemDialog`.
+
+### Platform plumbing — `app/lib/src/system_integration.dart`
+- `SystemIntegration.supported` — true where the autostart entry and the systemd timer exist (Linux).
+  Guard any new desktop-integration call with it.
+- `SystemIntegration.openPath(path)` — opens a file, folder or URL on Linux, Windows and Android.
+- Tray icons: every `assets/tray/*.png` has an `.ico` twin for Windows (made with
+  `convert x.png -define icon:auto-resize=32,16 x.ico`); add both when adding one.
+
+### Builds — `.github/workflows/build.yml`
+- Windows zip, Linux tar.gz and the signed arm64 APK on every push; attached to a release when one
+  is published. The APK key comes from the `ANDROID_KEYSTORE_*` / `ANDROID_KEY_*` repository secrets.
+  The command line tools are compiled next to the app in both. Add new `core/bin` tools there.
 
 ### Controller pattern — `app/lib/src/app_controller.dart`
 - Every action is `await store.xxx(...); await _loadAgenda();`. New actions follow it.

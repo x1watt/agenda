@@ -72,6 +72,10 @@ cd app && flutter build apk --release --target-platform android-arm64
 adb install -r build/app/outputs/flutter-apk/app-release.apk
 ```
 
+Windows: GitHub Actions builds `agenda-<version>-windows-x64.zip` (and a Linux tar.gz) on every
+push and attaches both to each release. Unpack and run `agenda.exe`. The start-at-login entry and
+the background timer are Linux only for now; `agenda_check.exe` is in the zip to schedule by hand.
+
 Command line tools from `core/`:
 
 ```

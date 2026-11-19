@@ -10,16 +10,21 @@ class SystemIntegration {
   static const timer = 'agenda-check.timer';
   static const service = 'agenda-check.service';
 
+  /// Autostart entry and systemd timer exist on Linux only; elsewhere (Windows) the
+  /// app runs from wherever it was unpacked and these settings do nothing.
+  static bool get supported => Platform.isLinux;
+
   static String get installedBinary => '${AgendaPaths.installDir}/agenda';
 
   /// What starts at login: the installed app (tool/install-linux.sh), or this very
   /// binary when it runs from somewhere else (a build folder).
   static String get appBinary => File(installedBinary).existsSync() ? installedBinary : Platform.resolvedExecutable;
 
-  static Future<bool> autostartEnabled() => File(AgendaPaths.autostartFile).exists();
+  static Future<bool> autostartEnabled() async => supported && await File(AgendaPaths.autostartFile).exists();
 
   /// The binary the autostart entry launches, or null without an entry.
   static Future<String?> autostartTarget() async {
+    if (!supported) return null;
     final f = File(AgendaPaths.autostartFile);
     if (!await f.exists()) return null;
     final m = RegExp(r'^Exec=(\S+)', multiLine: true).firstMatch(await f.readAsString());
@@ -29,6 +34,7 @@ class SystemIntegration {
   /// Makes the login entry match [on]: writes it when missing or when it points at a
   /// binary that is gone or no longer the one to use, removes it when off.
   static Future<void> ensureAutostart(bool on) async {
+    if (!supported) return;
     final target = await autostartTarget();
     if (!on) {
       if (target != null) await setAutostart(false);
@@ -39,6 +45,7 @@ class SystemIntegration {
 
   /// Writes or removes ~/.config/autostart/agenda.desktop.
   static Future<void> setAutostart(bool on) async {
+    if (!supported) return;
     final f = File(AgendaPaths.autostartFile);
     if (!on) {
       if (await f.exists()) await f.delete();
@@ -64,7 +71,8 @@ X-GNOME-Autostart-Delay=8
 ''');
   }
 
-  static Future<ProcessResult> _systemctl(List<String> args) => Process.run('systemctl', ['--user', ...args]);
+  static Future<ProcessResult> _systemctl(List<String> args) async =>
+      supported ? Process.run('systemctl', ['--user', ...args]) : ProcessResult(0, 1, '', '');
 
   static Future<bool> timerEnabled() async =>
       (await _systemctl(['is-enabled', timer])).stdout.toString().trim() == 'enabled';
@@ -75,6 +83,7 @@ X-GNOME-Autostart-Delay=8
 
   /// Changes the tick interval with a drop-in, then reloads the timer.
   static Future<void> setInterval(int minutes) async {
+    if (!supported) return;
     final dir = Directory('${AgendaPaths.systemdUserDir}/$timer.d');
     await dir.create(recursive: true);
     await File('${dir.path}/interval.conf').writeAsString('[Timer]\nOnUnitActiveSec=\nOnUnitActiveSec=${minutes}min\n');
@@ -103,6 +112,14 @@ X-GNOME-Autostart-Delay=8
         await launchUrl(Uri.parse(path), mode: LaunchMode.externalApplication);
       } else {
         await OpenFilex.open(path);
+      }
+      return;
+    }
+    if (Platform.isWindows) {
+      if (RegExp(r'^(https?|mailto):').hasMatch(path)) {
+        await launchUrl(Uri.parse(path), mode: LaunchMode.externalApplication);
+      } else {
+        await Process.start('explorer.exe', [path.replaceAll('/', '\\')], mode: ProcessStartMode.detached);
       }
       return;
     }
